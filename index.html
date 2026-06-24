@@ -490,6 +490,32 @@
       font-family: monospace; font-size: 0.8rem;
     }
 
+    /* Voice init banner */
+    .voice-init-banner {
+      background: linear-gradient(135deg, #fff7ed 0%, #fed7aa 100%);
+      border: 2px solid #f97316;
+      border-radius: 12px;
+      padding: 1rem;
+      text-align: center;
+    }
+    .btn-init-voices {
+      background: #ea580c !important;
+      color: #fff !important;
+      border-radius: 999px !important;
+      font-size: 1rem !important;
+      padding: 0.75rem 1.5rem !important;
+      box-shadow: 0 3px 12px rgba(234,88,12,0.4) !important;
+    }
+    .btn-init-voices:active { background: #c2410c !important; transform: scale(0.97); }
+    .voice-init-hidden { display: none !important; }
+
+    /* Mobile: bigger touch targets */
+    .btn-play {
+      width: 56px !important; height: 56px !important;
+    }
+    .btn-play svg { width: 24px !important; height: 24px !important; }
+    .transport { padding: 0.6rem 0.75rem !important; }
+
     /* === Helpers === */
     .lang-zh { font-family: var(--font-serif) !important; }
     .lang-en { font-family: "Georgia", "Times New Roman", serif !important; }
@@ -583,6 +609,12 @@
           <span>🎙 考场技巧讲解</span>
           <span>⏱ 总时长约 163 分钟</span>
           <span>🔁 支持循环跟读</span>
+        </div>
+        <div id="voice-init-banner" class="voice-init-banner" style="margin-top:1rem;display:none;">
+          <button class="btn btn-primary" id="btn-init-voices" style="font-size:1rem;padding:0.8rem 1.5rem;">
+            🔊 点击加载语音引擎（首次使用必点）
+          </button>
+          <p style="margin-top:0.5rem;font-size:0.8rem;color:#92400e;">部分手机需要此步骤才能正常播放，请点击上方按钮激活语音功能</p>
         </div>
       </section>
 
@@ -1269,11 +1301,11 @@
       };
       if (got()) return;
       window.speechSynthesis.onvoiceschanged = got;
-      // 兜底：多次轮询直到拿到为止
+      // 兜底：多次轮询直到拿到为止（移动端可能需要多次）
       let n = 0;
       const timer = setInterval(() => {
         if (got()) { clearInterval(timer); }
-        else if (++n > 30) { clearInterval(timer); resolve([]); }
+        else if (++n > 20) { clearInterval(timer); resolve([]); }
       }, 300);
     });
   }
@@ -1751,10 +1783,43 @@
   async function init() {
     renderTOC();
     renderContent();
+    // 尝试立即加载音色
     await loadVoices();
     buildQueue();
     bindEvents();
     updateProgress();
+
+    // 检查音色是否加载成功；移动端常失败，提示用户激活
+    const banner = document.getElementById('voice-init-banner');
+    const initBtn = document.getElementById('btn-init-voices');
+    if (banner && initBtn) {
+      if (!state.voicesZh || !state.voicesEn || state.voicesAllZh.length === 0) {
+        banner.style.display = 'block';
+        banner.classList.remove('voice-init-hidden');
+      } else {
+        banner.classList.add('voice-init-hidden');
+      }
+      initBtn.addEventListener('click', async () => {
+        banner.style.display = 'none';
+        // 触发一次语音预热（朗读一小段）
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
+        // 多次获取voices直到有数据
+        for (let i = 0; i < 5; i++) {
+          await loadVoices();
+          if (state.voicesAllZh.length > 0 || state.voicesAllEn.length > 0) break;
+          await new Promise(r => setTimeout(r, 500));
+        }
+        buildQueue();
+        updateProgress();
+        // 播一小段测试
+        const test = new SpeechSynthesisUtterance('语音已激活，请选择音色后开始跟读');
+        test.lang = 'zh-CN';
+        test.volume = 0.8;
+        if (state.voicesZh) test.voice = state.voicesZh;
+        if (window.speechSynthesis) window.speechSynthesis.speak(test);
+      });
+    }
+
     console.log('播客初始化完成，共', state.queue.length, '段');
   }
 
